@@ -40,7 +40,9 @@ class AbstractAffineModel(object):
     """Base class for Affine, Similarity, Rigid, Translation
 
     """
-    def __init__(self, matrix=None, src=None, dst=None, dim=None, estimate_kwargs={}, **kwargs):
+    def __init__(self, matrix=None, src=None, dst=None, dim=None,
+                 estimate_kwargs=None, **kwargs):
+        estimate_kwargs = estimate_kwargs or {}
         if matrix is not None:
             self.params = self.normalize_homogeneous_matrix(matrix)
         elif src is not None and dst is not None:
@@ -128,6 +130,11 @@ class AbstractAffineModel(object):
         self.params = self.normalize_homogeneous_matrix(p)
         if return_params:
             return p
+
+    @classmethod
+    def from_estimate(cls, src, dst, **kwargs):
+        p = cls.fit(src, dst, **kwargs)
+        return cls(matrix=p)
 
     @property
     def M(self):
