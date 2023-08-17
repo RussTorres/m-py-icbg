@@ -52,21 +52,32 @@ def filter_candidates(tform, candidates, minNumInliers=None, maxTrust=4.):
 def ransac(model, candidates, epsilon, iterations=None,
            minNumInliers=None, maxNumInliers=numpy.inf,
            data_validator=_always_true, model_validator=_always_true,
-           stop_probability=1., random_state=None, **kwargs):
+           stop_probability=1., random_state=None,
+           minNumMatches=None, estimate_kwargs=None, **kwargs):
     if not is_iterable(candidates):
         raise ValueError("Invalid candidates of type {}".format(
             type(candidates)))
+    
+    estimate_kwargs = estimate_kwargs or {}
+    minNumMatches = minNumMatches or getattr(model, "minNumMatches", None)
+    iterations = iterations or 10000
+
+    if minNumMatches is None:
+        raise ValueError(
+            "minNumMatches not provided by model "
+            "{} or input argument.".format(
+                model.__class__))
 
     candidates = list(candidates)
     candidate_shapes = {c.shape for c in candidates}
     if len(candidate_shapes) != 1:
         raise ValueError(
             "shape mismatch in candidates! {}".format(candidate_shapes))
-    num_samples = candidate_shapes[0]
-    if num_samples < model.minNumMatches:
+    num_samples = list(candidate_shapes)[0][0]
+    if num_samples < minNumMatches:
         raise ValueError(
             "need {} points to fit {}, got {}".format(
-                model.minNumMatches, model.__class__, num_samples))
+                minNumMatches, model.__class__, num_samples))
 
     # cost = Double.MAX_VALUE
     best_model = None
@@ -76,7 +87,7 @@ def ransac(model, candidates, epsilon, iterations=None,
 
     random_state = get_random_state(random_state)
 
-    for num_trial in xrange(iterations):
+    for num_trial in range(iterations):
         indices = random_state.randint(0, num_samples, minNumInliers)
         samples = [d[indices] for d in candidates]
 
@@ -84,15 +95,15 @@ def ransac(model, candidates, epsilon, iterations=None,
             continue
 
         try:
-            sample_model = model.estimate(*samples)
+            sample_model = model.from_estimate(
+                *samples, **estimate_kwargs)
         except MPYICBGError:  # TODO custom error handling
             continue
 
         if not model_validator(sample_model, *samples):
             continue
 
-        sample_model_residuals = numpy.linalg.norm(
-            sample_model.residuals(*candidates), axis=1)
+        sample_model_residuals = sample_model.residual_distance(*candidates)
         sample_model_inliers = sample_model_residuals < epsilon
         sample_model_residuals_sum = numpy.sum(sample_model_residuals ** 2)
         sample_inlier_num = numpy.sum(sample_model_inliers)
@@ -103,7 +114,7 @@ def ransac(model, candidates, epsilon, iterations=None,
         if (sample_inlier_num > best_inlier_num
             or (sample_inlier_num == best_inlier_num
                 and sample_model_residuals_sum < best_inlier_residuals_sum)):
-            best_model = sample_model
+
             best_inlier_num = sample_inlier_num
             best_inlier_residuals_sum = sample_model_residuals_sum
             best_inliers = sample_model_inliers
@@ -116,11 +127,14 @@ def ransac(model, candidates, epsilon, iterations=None,
                     best_inlier_num, num_samples, minNumInliers,
                     stop_probability)):
                 break
-        if best_inliers is not None:
-            for i, d in enumerate(candidates):
-                candidates[i] = d[best_inliers]
-            best_model.estimate(*candidates)
-        return best_model, best_inliers
+            best_candidates = [d[best_inliers] for d in candidates]
+            # if best_inliers is not None:
+            #     for i, d in enumerate(candidates):
+            #         candidates[i] = d[best_inliers]
+            if best_inliers.sum() > minNumInliers:
+                best_model = sample_model.from_estimate(
+                    *best_candidates, **estimate_kwargs)
+    return best_model, best_inliers
 
 
 def filterRansac():
