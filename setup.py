@@ -34,7 +34,7 @@ with open('test_requirements.txt', 'r') as f:
 with open('requirements.txt', 'r') as f:
     required = f.read().splitlines()
 
-setup(name='m[py]icbg',
+setup(name='mpyicbg',
       description=_description,
       author='Russel Torres',
       author_email='RussTorres@gmail.com',
